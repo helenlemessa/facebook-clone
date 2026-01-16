@@ -1,0 +1,31 @@
+name: facebook_clone
+description: A Facebook Clone App
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  provider: ^6.1.1
+  intl: ^0.19.0
+  
+  # Firebase - Updated versions
+  firebase_core: ^2.28.0
+  firebase_auth: ^4.16.1
+  cloud_firestore: ^4.16.1
+  firebase_storage: ^11.5.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.1
+
+flutter:
+  uses-material-design: true
+  # REMOVE OR COMMENT OUT ASSETS SECTION
+  # assets:
+  #   - assets/
