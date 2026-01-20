@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class UserModel {
   final String uid;
@@ -44,11 +45,30 @@ class AuthProvider with ChangeNotifier {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
+  // GoogleSignIn with Web Client ID configuration
+  // For your project: facebook-clone-6cca4
+  // Your Firebase project number: 556331607467
+  // Web Client ID typically looks like: 556331607467-xxxxxxxxxxxx.apps.googleusercontent.com
+  // For now, I'll add the configuration but you need to enable Google Sign-In in Firebase Console
+  
+  // IMPORTANT: You need to get the actual Web Client ID from Firebase Console
+  // Go to: Firebase Console -> Your Project -> Authentication -> Sign-in method -> Google -> Web SDK configuration
+  
+  final GoogleSignIn _googleSignIn = GoogleSignIn(
+    // This is a placeholder. You need to replace it with your actual Web Client ID
+    // For testing on localhost, you can try using just the project number
+    clientId: kIsWeb ? '556331607467.apps.googleusercontent.com' : null,
+    scopes: ['email', 'profile'],
+  );
+  
   UserModel? get user => _user;
   bool get isLoading => _isLoading;
   bool get isAuthenticated => _user != null;
   
   AuthProvider() {
+    print("🌍 Platform: ${kIsWeb ? 'Web' : 'Mobile'}");
+    print("🔑 GoogleSignIn configured for web: ${kIsWeb}");
+    
     // Initialize user on startup
     _initializeUser();
     
@@ -98,6 +118,7 @@ class AuthProvider with ChangeNotifier {
           uid: firebaseUser.uid,
           name: firebaseUser.displayName ?? 'New User',
           email: firebaseUser.email ?? '',
+          profileImage: firebaseUser.photoURL,
           dob: '1990-01-01',
         );
         
@@ -110,6 +131,105 @@ class AuthProvider with ChangeNotifier {
       }
     } catch (e) {
       print("❌ Error creating user document: $e");
+    }
+  }
+  
+  // Google Sign In Method with better error handling
+  Future<void> signInWithGoogle() async {
+    setLoading(true);
+    
+    try {
+      print("🔄 Starting Google Sign In");
+      print("📱 Platform: ${kIsWeb ? 'Web' : 'Mobile'}");
+      
+      // Trigger Google Sign In flow
+      final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+      
+      if (googleUser == null) {
+        // User cancelled the sign in
+        print("❌ Google sign in cancelled by user");
+        setLoading(false);
+        return;
+      }
+      
+      // Obtain auth details from request
+      final GoogleSignInAuthentication googleAuth = 
+          await googleUser.authentication;
+      
+      print("✅ Google authentication successful");
+      
+      // Create a new credential
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+      
+      // Sign in to Firebase with Google credentials
+      final UserCredential userCredential = 
+          await _auth.signInWithCredential(credential);
+      
+      print("✅ Firebase Google Sign In successful: ${userCredential.user?.uid}");
+      
+      // Check if user is new or existing
+      if (userCredential.additionalUserInfo!.isNewUser) {
+        print("👤 New Google user, creating document...");
+        final User? firebaseUser = userCredential.user;
+        
+        if (firebaseUser != null) {
+          // Create user document in Firestore
+          final userData = UserModel(
+            uid: firebaseUser.uid,
+            name: firebaseUser.displayName ?? 'Google User',
+            email: firebaseUser.email ?? '',
+            profileImage: firebaseUser.photoURL,
+            dob: '1990-01-01',
+          );
+          
+          await _firestore.collection('users').doc(firebaseUser.uid).set(
+            userData.toMap()
+          );
+          
+          _user = userData;
+          print("✅ Created new user document for Google user");
+        }
+      } else {
+        // Existing user, load their data
+        if (userCredential.user != null) {
+          await _loadUserData(userCredential.user!.uid);
+        }
+      }
+      
+    } on FirebaseAuthException catch (e) {
+      print("❌ Firebase Google Sign In error: ${e.code} - ${e.message}");
+      throw _handleAuthError(e);
+    } catch (e) {
+      print("❌ Google Sign In error: $e");
+      
+      // Provide more helpful error message
+      if (kIsWeb) {
+        throw 'Google Sign-In needs Web Client ID setup. Please configure it in Firebase Console.';
+      } else {
+        throw 'Error signing in with Google. Please try again.';
+      }
+    } finally {
+      setLoading(false);
+    }
+  }
+  
+  // Update logout to also sign out from Google
+  Future<void> logout() async {
+    try {
+      // Sign out from Google
+      await _googleSignIn.signOut();
+      
+      // Sign out from Firebase
+      await _auth.signOut();
+      
+      _user = null;
+      print("✅ Logout successful from both Firebase and Google");
+    } catch (e) {
+      print("❌ Logout error: $e");
+      throw 'Error signing out. Please try again.';
     }
   }
   
@@ -164,6 +284,7 @@ class AuthProvider with ChangeNotifier {
           uid: firebaseUser.uid,
           name: name.trim(),
           email: email.trim(),
+          profileImage: firebaseUser.photoURL,
           dob: dob,
         );
         
@@ -213,17 +334,6 @@ class AuthProvider with ChangeNotifier {
         return 'Email/password signup is not enabled. Contact support.';
       default:
         return e.message ?? 'An error occurred. Please try again.';
-    }
-  }
-  
-  Future<void> logout() async {
-    try {
-      await _auth.signOut();
-      _user = null;
-      print("✅ Logout successful");
-    } catch (e) {
-      print("❌ Logout error: $e");
-      throw 'Error signing out. Please try again.';
     }
   }
   
